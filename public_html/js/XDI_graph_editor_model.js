@@ -23,8 +23,16 @@ THE SOFTWARE.
 */
 
 // Initializing the graph with XDI statements.
-function initializeGraphWithXDI(data) {
-    clearGraph();
+function initializeGraphWithXDI(data,willClearGraph,willJoinGraph) {
+    if(willClearGraph == null)
+        willClearGraph = true;
+    
+    if(willClearGraph)
+    {
+        clearGraph();
+    }
+    if(!willJoinGraph)
+        lastGraphId ++;
 
     var lines = data.split(/\r\n|\r|\n/g);
     // removing empty lines etc.
@@ -52,10 +60,10 @@ function initializeGraphWithXDI(data) {
         if (d.length > 0) {
             var xdistmt = xdi.parser.parseStatement(d);
             if (xdistmt.isContextNodeStatement()) {
-                addStatement(xdistmt.subject()._string, xdistmt.object()._string, xdistmt.subject()._string + xdistmt.object()._string, false,xdistmt);
+                addStatement(xdistmt.subject()._string, xdistmt.object()._string, xdistmt.subject()._string + xdistmt.object()._string, false,xdistmt, willJoinGraph);
             }
             else if (xdistmt.isRelationStatement()) {
-                addStatement(xdistmt.subject()._string, xdistmt.predicate()._string, xdistmt.object()._string, true,xdistmt);
+                addStatement(xdistmt.subject()._string, xdistmt.predicate()._string, xdistmt.object()._string, true,xdistmt, willJoinGraph);
             }
             else if (xdistmt.isLiteralStatement()) {
                 var obj = xdistmt._string.replace(xdistmt.subject()._string, "");
@@ -77,7 +85,7 @@ function isRootToCheck(d)
         return true;
     
     for (var i = 0; i < d.parents.length;i ++)
-        if(!findLinkinMap(d.parents[i],d).isRel)
+        if(!findLink(d.parents[i],d).isRel)
             return false;
     return true;
 }
@@ -115,7 +123,7 @@ function getDrawData(root){
             return;
         for (var i = collection.length - 1; i >= 0; i--) {
             var adjnode = collection[i]
-            var link = isParent? findLinkinMap(adjnode,node):findLinkinMap(node,adjnode);
+            var link = isParent? findLink(adjnode,node):findLink(node,adjnode);
             if(!isParent&&link!=null && !link.isAdded)    
             {   
                 if(link.isRel)
@@ -184,32 +192,33 @@ function toggleFoldNode(node){
     restart();
 }
 
-function addStatement(subject, predicate, object, isrel, statement) {
+function addStatement(subject, predicate, object, isrel, statement, willJoinGraph) {
     var subjectnode, objectnode;
+    var targetGraphId = willJoinGraph? null:lastGraphId;
     var isLiteral = (predicate === null) ? true : false;
     if (predicate === null)
         predicate = "&";
-    var searchres = findNodeIndex(jsonnodes, subject);
-    if (searchres == null) {
+    var nodeFound = findNode(jsonnodes, subject, targetGraphId);
+    if (nodeFound == null) {
         var isRoot = subject === "";
-        subjectnode = addNode(subject,false,isRoot);
+        subjectnode = addNode(subject,false,isRoot,null, lastGraphId);
     } else
-        subjectnode = jsonnodes[searchres];
+        subjectnode = nodeFound;
     
-    searchres = findNodeIndex(jsonnodes, object);
-    if (searchres == null) {
-        objectnode = addNode(object,isLiteral,false, statement.object()._string);
+    nodeFound = findNode(jsonnodes, object, targetGraphId);
+    if (nodeFound == null) {
+        objectnode = addNode(object,isLiteral,false, statement.object()._string, lastGraphId);
     } else
-        objectnode = jsonnodes[searchres];
+        objectnode = nodeFound;
 
     addLink(subjectnode,objectnode,predicate,false,true,isrel);
 }
 
 //Atomic operation for add a node
-function addNode(name,isLiteral, isRoot, shortName){
+function addNode(name,isLiteral, isRoot, shortName, graphID){
     if(shortName == null)
         shortName = name;
-    var newNode = new XDINode(++lastNodeId,name,shortName,isLiteral ? "literal":"context");
+    var newNode = new XDINode(++lastNodeId,name,shortName,isLiteral ? "literal":"context", graphID);
     setNodeIsRoot(newNode,isRoot);
     jsonnodes.push(newNode);
     return newNode;
@@ -220,9 +229,9 @@ function addLink(sourceNode,targetNode,linkName,isLeft,isRight,isRel,shortName){
     if(shortName == null)
         shortName = linkName;
 
-    var linkObject = findLinkinMap(sourceNode,targetNode);
+    var linkObject = findLink(sourceNode,targetNode);
     
-    if(linkObject)//if link not added, then link exists, no need to add new link.
+    if(linkObject)//if link exists, then don't add a new one.
         return;
 
     var newlink = new XDILink(++lastLinkId,linkName,shortName,isLeft, isRight, sourceNode, targetNode);
@@ -235,15 +244,6 @@ function addLink(sourceNode,targetNode,linkName,isLeft,isRight,isRel,shortName){
     jsonlinks.push(newlink);
     addLinktoMap(sourceNode, targetNode, newlink);
     return newlink;
-}
-
-function findLink(sourceNode,targetNode){
-    for(var i = 0;i < jsonlinks.length;i ++)
-    {   
-        var link = jsonlinks[i];
-        if(link.source.id === sourceNode.id && link.target.id === targetNode.id)
-            return link;
-    }
 }
 
 
@@ -261,7 +261,7 @@ function addLinkBetweenNodes(sourceNode,targetNode,isLeft,isRight){
         link = addLink(sourceNode,targetNode,linkName, isLeft, isRight, false);
     }
     else if(targetNode.type === "literal"){
-        var innerNode = addNode(sourceNode.name + "&", false, false);
+        var innerNode = addNode(sourceNode.name + "&", false, false, null, Math.max(sourceNode.graphID,targetNode.graphID));
         var linkToInnerNode = addLink(sourceNode,innerNode,"&",false,true,false);
         var linkToTargetNode = addLink(innerNode,targetNode,"&",false,true,false);
         link = linkToInnerNode;
@@ -270,6 +270,94 @@ function addLinkBetweenNodes(sourceNode,targetNode,isLeft,isRight){
 
     return link;
 }
+
+//Atomic ADD operation for nodeslinkmap
+function addLinktoMap(source, target,linkObject) {
+    var key = source.id + '-' + target.id;
+    if (!(key in nodeslinkmap)) {
+        nodeslinkmap[key] = linkObject;
+        return true;
+    }
+    //if link exists, return false;
+    return false;
+}
+
+//Atomic REMOVE operation for nodeslinkmap
+function delLinkfromMap(source, target) {
+    var key = source.id + '-' + target.id;
+    delete nodeslinkmap[key];
+}
+
+//Atomic SEARCH operation for nodeslinkmap
+function findLink(source,target){
+    var key = source.id + '-' + target.id;
+    return nodeslinkmap[key]; //if exist, return value, else return null;
+}
+
+// Returns the position/index in node collection of the node with name value name
+function findNode(nodeCollection, name, graphID) {
+    return _.find(nodeCollection,function(d) { 
+        if(graphID!=null)
+            return d.name==name 
+            && d.graphID==graphID; 
+        else
+            return d.name==name;
+    })
+}
+
+// Returns the position/index of the first link matching the provided node name
+// function findLinkToNode(linkCollection, node) {
+//     return _.find(linkCollection,function(d) { return d.source==node || d.target == node; })
+// }
+
+//Atomic REMOVE NODE
+function removeNode(nodeToRemove) {
+    //Remove all the links
+    for (var i = nodeToRemove.parents.length - 1; i >= 0; i--) {
+        var p = nodeToRemove.parents[i];
+        removeLink(findLink(p,nodeToRemove));
+    };
+
+    for (var i = nodeToRemove.children.length - 1; i >= 0; i--) {
+        var p = nodeToRemove.children[i];
+        removeLink(findLink(nodeToRemove,p));
+    };
+    
+    //Find and remove the node
+    jsonnodes.splice(jsonnodes.indexOf(nodeToRemove), 1);
+    
+}
+
+//Atomic REMOVE LINK
+function removeLink(linkToRemove){
+    if(linkToRemove == null)
+        return;
+    var source = linkToRemove.source;
+    var target = linkToRemove.target;
+    
+    source_name = source.name;
+    target_name = target.name;
+    source_childnb = (source.children) ? source.children.length : 0;
+    target_childnb = (target.children) ? target.children.length : 0;
+    if (source_childnb !== 0) {
+        source.children.splice(source.children.indexOf(target), 1);
+    }
+    target.parents.splice(target.parents.indexOf(source),1);
+    var spliceret = jsonlinks.splice(jsonlinks.indexOf(linkToRemove), 1);
+    if (spliceret.length !== 1) 
+        console.log("Error removing the link.");
+    delLinkfromMap(source, target);
+}
+
+// //Recursively remove all links of a node.
+// function removeLinksOfNode(victim) {
+//     var linkFound = findLinkToNode(jsonlinks, victim);
+//     if (linkFound) {
+//         var gone = jsonlinks.splice(linkFound, 1);
+//         delLinkfromMap(gone[0].source, gone[0].target);
+//         removeLinksOfNode(victim);
+//     }
+// }
 
 function checkLinkValidity(linkToCheck){
     // checking statement's validity
@@ -296,32 +384,6 @@ function checkLinkValidity(linkToCheck){
         updateStatus(validateMessage,false);
     }
 }
-
-//Atomic ADD operation for nodeslinkmap
-function addLinktoMap(source, target,linkObject) {
-    var key = source.id + '-' + target.id;
-    if (!(key in nodeslinkmap)) {
-        nodeslinkmap[key] = linkObject;
-        return true;
-    }
-    //if link exists, return false;
-    return false;
-}
-
-//Atomic REMOVE operation for nodeslinkmap
-function delLinkfromMap(source, target) {
-    var key = source.id + '-' + target.id;
-    delete nodeslinkmap[key];
-}
-
-//Atomic SEARCH operation for nodeslinkmap
-function findLinkinMap(source,target){
-    var key = source.id + '-' + target.id;
-    return nodeslinkmap[key]; //if exist, return value, else return null;
-}
-
-
-
 
 //Return a message if error else return "";
 function validateXDI(data, isRel, isLit) {
@@ -364,54 +426,7 @@ function validateXDI(data, isRel, isLit) {
     return "";
 }
 
-//Atomic REMOVE NODE
-function removeNode(nodeToRemove) {
-    //Remove all the links
-    for (var i = nodeToRemove.parents.length - 1; i >= 0; i--) {
-        var p = nodeToRemove.parents[i];
-        removeLink(findLinkinMap(p,nodeToRemove));
-    };
 
-    for (var i = nodeToRemove.children.length - 1; i >= 0; i--) {
-        var p = nodeToRemove.children[i];
-        removeLink(findLinkinMap(nodeToRemove,p));
-    };
-    
-    //Find and remove the node
-    jsonnodes.splice(jsonnodes.indexOf(nodeToRemove), 1);
-    
-}
-
-//Atomic REMOVE LINK
-function removeLink(linkToRemove){
-    if(linkToRemove == null)
-        return;
-    var source = linkToRemove.source;
-    var target = linkToRemove.target;
-    
-    source_name = source.name;
-    target_name = target.name;
-    source_childnb = (source.children) ? source.children.length : 0;
-    target_childnb = (target.children) ? target.children.length : 0;
-    if (source_childnb !== 0) {
-        source.children.splice(source.children.indexOf(target), 1);
-    }
-    target.parents.splice(target.parents.indexOf(source),1);
-    var spliceret = jsonlinks.splice(jsonlinks.indexOf(linkToRemove), 1);
-    if (spliceret.length !== 1) 
-        console.log("Error removing the link.");
-    delLinkfromMap(source, target);
-}
-
-//Recurvise remove all linkes of a node.
-function removeLinksOfNode(victim) {
-    var searchres = findFirstLinkIndex(jsonlinks, victim.name);
-    if (searchres !== null) {
-        var gone = jsonlinks.splice(searchres, 1);
-        delLinkfromMap(gone[0].source, gone[0].target);
-        removeLinksOfNode(victim);
-    }
-}
 
 
 function setLinkIsRel(linkToSet,newValue){
@@ -460,28 +475,7 @@ function inverseLinkDirection(linkToSet){
     delLinkfromMap(source_t0, target_t0);
 }
 
-// Returns the position/index in node collection of the node with name value name
-function findNodeIndex(coll, name) {
-    if (coll === null)
-        return null;
-    for (var i=0; i<coll.length; i++) {
-        if (coll[i].name === name) {
-            return i;
-        }
-    }
-    return null;
-}
 
-// Returns the position/index of the first link matching the provided node name
-function findFirstLinkIndex(coll, name) {
-    if (coll === null)
-        return null;
-    for (var i=0; i<coll.length; i++) {
-        if ((coll[i].source.name === name) || (coll[i].target.name === name))
-            return i;
-    }
-    return null;
-}
 
 
 function graphToString() {

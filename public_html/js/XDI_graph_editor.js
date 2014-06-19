@@ -27,10 +27,10 @@ THE SOFTWARE.
 
 // some UI management...
 var dlg;
-var importedXDI;
+
 
 $(function() {
-    var XDIsource = $('#XDIsource');
+    
     //Define the dialog for Import XDI
     dlg = $('#dialog-form').dialog({
         autoOpen: false,
@@ -39,45 +39,45 @@ $(function() {
         modal: true,
         buttons: {
             "Graph it!": function() {
-                importedXDI = XDIsource.val();
-                $(this).dialog("close");
+                var importedXDI = $('#XDIsource').val();
+                var willClearGraph = $('#clearGraphCheckBox').prop('checked');
+                var willJoinGraph = $('#joinGraphCheckBox').prop('checked');
+                $(this).dialog('close')
+                isDialogVisible = false;
+                if(!_.isEmpty(importedXDI))
+                    initializeGraphWithXDI(importedXDI,willClearGraph,willJoinGraph);
             },
             Cancel: function() {
-                suspendkeylistening = false;
-                $(this).dialog("close");
+                $(this).dialog('close')
+                isDialogVisible = false;
+                
             }
         },
-        close: function() {
-            if ((importedXDI !== undefined) && (importedXDI !== "")) {
-                suspendkeylistening = false;
-                initializeGraphWithXDI(importedXDI);
-            }
-        }
     });
     
-    // //Define event handler for sliders
-    // var $linkdistslider = $('input[name="linkdistslider"]');
-    // var $chargeslider = $('input[name="chargeslider"]');
-    // var $gravityslider = $('input[name="gravityslider"]');
+/*
+    //Define event handler for sliders
+    var $linkdistslider = $('input[name="linkdistslider"]');
+    var $chargeslider = $('input[name="chargeslider"]');
+    var $gravityslider = $('input[name="gravityslider"]');
     
-    // $linkdistslider.bind('change', function(e) {
-    //     e.preventDefault();
-    //     var val = parseInt($(this).val());
-    //     updateSim(val, null, null);
-    // });
-    // $chargeslider.bind('change', function(e) {
-    //     e.preventDefault();
-    //     var val = parseInt($(this).val());
-    //     updateSim(null, val, null);
-    // });
-    // $gravityslider.bind('change', function(e) {
-    //     e.preventDefault();
-    //     var val = parseInt($(this).val())/10;
-    //     updateSim(null, null , val);
-    // });
+    $linkdistslider.bind('change', function(e) {
+        e.preventDefault();
+        var val = parseInt($(this).val());
+        updateSim(val, null, null);
+    });
+    $chargeslider.bind('change', function(e) {
+        e.preventDefault();
+        var val = parseInt($(this).val());
+        updateSim(null, val, null);
+    });
+    $gravityslider.bind('change', function(e) {
+        e.preventDefault();
+        var val = parseInt($(this).val())/10;
+        updateSim(null, null , val);
+    });
+*/
 
-
-    
     //Initialize SVG
     svg = d3.select("#drawing #mainCanvas")
         // .attr("width", "100%")//totalWidth)
@@ -108,11 +108,11 @@ $(function() {
     clearGraph();
 
     //Only For Debug purpose
-    // initializeGraphWithXDI(attributeSingletons)
+    initializeGraphWithXDI(attributeSingletons)
 
     // initializeGraphWithXDI("/$ref/=abc\n=abc/$isref/")
     // initializeGraphWithXDI("/$ref/=def\n=def/$isref/")
-    initializeGraphWithXDI("=alice<#email>&/&/\"alice@emailemailemailemailemailemailemailemailemailemailemailemail.com\"")
+    // initializeGraphWithXDI("=alice<#email>&/&/\"alice@emailemailemailemailemailemailemailemailemailemailemailemail.com\"")
     // initializeGraphWithXDI("[=]!:uuid:f642b891-4130-404a-925e-a65735bceed0/$all/")
 
     // initializeGraphWithXDI("=alice/#friend/=bob\n=bob/#friend/=alice")
@@ -124,10 +124,6 @@ $(function() {
 //
 // Functions
 //
-
-
-
-
 
 
 function initializeGraph() 
@@ -159,6 +155,7 @@ function initializeGraph()
 
     restart();
 }
+
 function getLinkPathD(d){
     var deltaX = d.target.x - d.source.x,
         deltaY = d.target.y - d.source.y,
@@ -360,24 +357,30 @@ function exportGraph() {
 
 function clearGraph() {
     // todo - add disappearance effect here...
-    while(jsonnodes.length !== 0) {
-        var vic = jsonnodes[0];
-        removeNode(vic);
-        removeLinksOfNode(vic);
-    }
+    // while(jsonnodes.length !== 0) {
+    //     var vic = jsonnodes[0];
+    //     removeNode(vic);
+    //     // removeLinksOfNode(vic);
+    // }
+
+    jsonnodes = [];
+    jsonlinks = [];
+    nodeslinkmap = {};
+    lastGraphId = -1;
+    lastNodeId = -1;
+    lastLinkId = -1;
     lastDrawData = null;
     updateStatus("Syntax OK",true);
     restart();
 }
-
 
 function help() {
     var helpWindow = window.open("help.html","Help","width=600,height=600");
 }
 
 function importXDI() {
-    suspendkeylistening = true;
-    dlg.dialog("open");
+    isDialogVisible = true;
+    $('#dialog-form').dialog("open");
 }
 
 function setNodeLabelsVisibility(newValue){
@@ -399,7 +402,6 @@ function toggleLinkLabelsVisibility(){
     setLinkLabelsVisibility(!value)
     d3.select('#toggleLinkButton').classed("off",!value);
 }
-
 
 function toggleVisibility (button) {
     var name = d3.select(button).attr("name");
