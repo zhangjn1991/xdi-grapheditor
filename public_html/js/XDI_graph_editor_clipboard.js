@@ -30,11 +30,12 @@ function cloneNodeLinks (nodes,links, willKeepSameId) {
     var result = {nodes: [], links: []};
     var oldLastNodeId = lastNodeId, oldLastLinkId = lastLinkId;
     nodes.forEach(function  (d) {
-        var nd = addNode(d.name, d.shortName, lastGraphId,true);
+        var nd = addNode(d.fullName, d.shortName, lastGraphId,true);
         if(willKeepSameId)
             nd.id = d.id;
         nd.x = d.x;
         nd.y = d.y;
+        nd.isFolded = d.isFolded;
         result.nodes.push(nd);
         nodeIdDict[d.id] = nd;
     })
@@ -53,7 +54,7 @@ function cloneNodeLinks (nodes,links, willKeepSameId) {
         if(!(newSource && newTarget)) //ignore the links without both of its node copied
             return;
 
-        var nd = addLink(newSource,newTarget,d.name,d.left,d.right,d.isRelation,d.shortName,true);
+        var nd = addLink(newSource,newTarget,d.shortName,d.left,d.right,d.isRelation,true);
 
         if(willKeepSameId)
             nd.id = d.id;
@@ -80,11 +81,16 @@ function pasteFrom(source, willKeepSameId)
     globalNodes = globalNodes.concat(res.nodes);
     globalLinks = globalLinks.concat(res.links);
     res.links.forEach(function(d) { addLinkToMap(d.source,d.target,d);});
+    return res;
 }
 
 function pasteFromClipBoard () {
     lastGraphId ++;
-    pasteFrom(clipBoard)
+    var newElements = pasteFrom(clipBoard);
+    newElements.nodes.forEach(function (d) {
+        d.x += NEW_ELEMENT_POS_DELTA;
+        d.y += NEW_ELEMENT_POS_DELTA;
+    })
 }
 
 function duplicateObjects (nodesToCopy,linksToCopy) {
